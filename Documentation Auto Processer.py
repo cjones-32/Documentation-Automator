@@ -5,7 +5,9 @@ import shutil
 import re
 import csv
 import openpyxl
-from openpyxl.styles import NamedStyle, Font, Border, Side, PatternFill
+from openpyxl.styles import NamedStyle, Font, Border, Side, PatternFill, Alignment
+
+import shutil # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
 
 ###################################################################################################
 ##############     Get the project directory, project number, and all assemblies     ##############
@@ -35,8 +37,7 @@ if not os.path.isfile(project_path):
 
 # Get the board number. Take the Altium project path, rsplit the last \ and take the second string of the 2 new ones
 # Then rsplit again by underscore to come up with board name in the end.
-i = project_path.rsplit('\\', 1)[1]
-pcb_number = i.rsplit('_', 1)[0]
+pcb_number = project_path.rsplit('\\', 1)[1].rsplit('_', 1)[0]
 
 # Verifies that the board number matches the template of 1234B4657A
 if not re.search('^\d\d\d\dB46\d\d[A-Z]$', pcb_number):
@@ -71,7 +72,7 @@ print()
 ####################     Declare arrays and dictionaries for needed files     #####################
 ###################################################################################################
 
-# List of file we are going to be manipulating
+# List of file we are going to be manipulating. Will allow ability for user to choose what to keep in future updates
 ###################################################################################################
 
 # Assembly BOMs found
@@ -81,166 +82,172 @@ sap_boms = []
 # Aegis Sync BOMs found
 aegis_boms = []
 
-# Lists of files that we want to keep with known names
+# Lists of files that we want to keep with known names. Allows easy way to adjust what should be kept
 ###################################################################################################
 
 # List of files for the reports folder that we want to keep
-reports_files = [pcb_number + ' Order Information.xlsx',
-                 pcb_number + '_Build_Request.docx',
-                 pcb_number + '_Build Request.docx',
-                 pcb_number + ' Build_Request.docx',
-                 pcb_number + ' Build Request.docx',
-                 pcb_number + '_EE_Review.xlsx',
-                 pcb_number + '_EE Review.xlsx',
-                 pcb_number + '_EE Review.xlsx',
-                 pcb_number + ' EE_Review.xlsx',
-                 pcb_number + '_EE_Review.xls',
-                 pcb_number + '_EE Review.xls',
-                 pcb_number + '_EE Review.xls',
-                 pcb_number + ' EE_Review.xls'
-                 ]
+reports_keep = ['^' + pcb_number + '[ ,_]Order[ ,_]Information.xls(x)?$',
+                '^' + pcb_number + '[ ,_]Build[ ,_]Request.doc(x)?$',
+                '^' + pcb_number + '[ ,_]EE[ ,_]Review.xls(x)?$'
+                ]
 
-# List of files for Source folder we want to keep, SCH HANDELED ON SEARCH
-source_files = ['Assy_' + pcb_number + '.PCBDwf',
-                'PCB_' + pcb_number + '.PcbDoc',
+# List of files for Source folder we want to keep
+source_keep = ['^Assy[ ,_]' + pcb_number + '_v[0-9]+.PCBDwf$',
+                '^PCB[ ,_]' + pcb_number + '_v[0-9]+.PcbDoc$',
+                '.SchDoc$'
                 ]
 
 # List of Mfg-Data files to keep, adds aegis sync later depending on if excel or text needed.
-mfgdata_files = ['ODB_' + pcb_number + '.zip'
+mfgdata_keep = ['^ODB[ ,_]' + pcb_number + '.zip$'
                  ]
 
-# Dictionary of Altiums Gerber layer file extensions
-gerber_ext = {  'G' : '   -  Mid Layer ',              # .G(int) =  internal layer (int)
-              'GBL' : '  -  Bottom Layer',
-              'GBO' : '  -  Bottom Overlay',
-              'GBP' : '  -  Bottom Paste Mask',
-              'GBS' : '  -  Bottom Solder Mask',
-#              'GD' : '   -  Drill Drawing ',        # .GD(int) = Drill Drawing (int)
-#              'GG' : '   -  Drill Guide ',          # .GG(int) = Drill Guide (int)
-#             'GKO' : '  -  Keep Out Layer',
-#              'GM' : '  -  Mechanical Layer ',     # .GM(int) = Mechanical Layer (int)
-               'GP' : '  -  Internal Plane Layer ', # .GP(int) = Internal Plane Layer (int)
-#             'GPB' : '  -  Pad Master Bottom',
-#             'GPT' : '  -  Pad Master Top',
-              'GTL' : '  -  Top Layer',
-              'GTO' : '  -  Top Overlay',
-              'GTP' : '  -  Top Paste Mask',
-              'GTS' : '  -  Top Solder Mask',
-#             'P01' : '  -  Gerber Panels ',        # .P0(int) = Ger Panel (int)
-              'DRR' : '  -  NC Drill Report',
-              'TXT' : '  -  Drill File'
-              }
-
-# List of Gerber files extensions that repeat with numbers
-rep_gerber_ext = ['G',
-#                 'GD',
-#                 'GG',
-#                 'GM',
-                  'GP',
-#                 'P0'
-                  ]
-
-# List of Gerber files to keep, filled in on search. Includes the correct number suffex if appropriate
-# Added hole and slot now to cover if present later
-keep_gerbers = [pcb_number + '-SlotHoles.TXT',
-                pcb_number + '-RoundHoles.TXT'
-                ]
+# Left empty, filled in when Gerbers are found. Will allow ability for user to choose what to keep in future updates
+gerbers_keep = []
 
 # List of files / folders for CAM folder that are valid
-cam_files = ['Gerber and Drill',
-              pcb_number + '.pdf',
-              pcb_number + '.PDF',
-              pcb_number + '.zip',
-              'Spec_' + pcb_number + '.dwg',
+cam_keep = ['^Gerber and Drill$',
+              '^' + pcb_number + '_[A-Z][0-9]+.pdf$',
+              '^' + pcb_number + '_[A-Z][0-9]+_(RoHS)?(R)?(FLEX)?(PILLAR)?(MCPCB)?(VIPPO)?.zip$',
+              '^Spec[ ,_]' + pcb_number + '_[A-Z][0-9]+.dwg$',
              ]
-             
+
+# Dictionary of Altiums Gerber layer file extensions
+gerber_ext = {  pcb_number + '.G[0-9]+' : '   -  Mid Layer ',              # .G(int) =  internal layer (int)
+              pcb_number + '.GBL' : '  -  Bottom Layer',
+              pcb_number + '.GBO' : '  -  Bottom Overlay',
+              pcb_number + '.GBP' : '  -  Bottom Paste Mask',
+              pcb_number + '.GBS' : '  -  Bottom Solder Mask',
+#              pcb_number + '.GD[0-9]+' : '   -  Drill Drawing ',        # .GD(int) = Drill Drawing (int)
+#              pcb_number + '.GG[0-9]+' : '   -  Drill Guide ',          # .GG(int) = Drill Guide (int)
+#             pcb_number + '.GKO' : '  -  Keep Out Layer',
+#              pcb_number + '.GM[0-9]+' : '  -  Mechanical Layer ',      # .GM(int) = Mechanical Layer (int)
+               pcb_number + '.GP[0-9]+' : '  -  Internal Plane Layer ', # .GP(int) = Internal Plane Layer (int)
+#             pcb_number + '.GPB' : '  -  Pad Master Bottom',
+#             pcb_number + '.GPT' : '  -  Pad Master Top',
+              pcb_number + '.GTL' : '  -  Top Layer',
+              pcb_number + '.GTO' : '  -  Top Overlay',
+              pcb_number + '.GTP' : '  -  Top Paste Mask',
+              pcb_number + '.GTS' : '  -  Top Solder Mask',
+#              pcb_number + '.P[0-9]+' : '  -  Gerber Panels ',        # .P0(int) = Ger Panel (int)
+              pcb_number + '.DRR' : '  -  NC Drill Report',
+              pcb_number + '.TXT' : '  -  Drill File',
+              pcb_number + '-SlotHoles.TXT' : '  -  Slot Drill File',
+              pcb_number + '-RoundHoles.TXT' : '  -  Hole Drill File'
+              }
+
 ###################################################################################################
 ######################     Find all the relavent project info and files     #######################
 ###################################################################################################
 
 # Find the assembly BOMs
+###################################################################################################
+
 print('Assembly BOMs:')
 # For each assembly, see if the its BOM is in the reports folder
 for assembly in assemblies:
-    if os.path.isfile('.\\Reports\\' + assembly + ' Assembly BOM.xlsx'):
-        print(assembly + ' Assembly BOM Found')
-        assembly_boms.append(assembly + ' Assembly BOM.xlsx')
-        reports_files.append(assembly + ' Assembly BOM.xlsx')
-    else:
-        print(assembly + ' MISSING')
+    found = False
+    print(assembly, end = '')
+    for file in os.listdir('.\\Reports'):
+        if re.search(assembly + '[ ,_]Assembly[ ,_]BOM.xls(x)?', file, re.IGNORECASE):
+            found = True
+            assembly_boms.append(file)
+            reports_keep.append(file)
+            print(' Assembly BOM Found')
+    if found == False:
+        print(' MISSING')
 print()
 
 # Find the SAP BOMs
+###################################################################################################
+
 print('SAP BOMs:')
 # For each assembly, see if the its BOM is in the reports folder
 for assembly in assemblies:
-    if os.path.isfile('.\\Reports\\' + assembly + ' SAP Import File.xlsx'):
-        print(assembly + ' SAP Import File Found')
-        sap_boms.append(assembly + ' SAP Import File.xlsx')
-        reports_files.append(assembly + ' SAP Import File.xlsx')
-    else:
-        print(assembly + ' MISSING')
+    found = False
+    print(assembly, end = '')
+    for file in os.listdir('.\\Reports'):
+        if re.search(assembly + '[ ,_]SAP[ ,_]Import[ ,_]File.xls(x)?', file, re.IGNORECASE):
+            found = True
+            sap_boms.append(file)
+            reports_keep.append(file)
+            print(' SAP Import File Found')
+    if found == False:
+        print(' MISSING')
 print()
 
 # Find Gerber layer data from Gerber and Drill folder
+###################################################################################################
+
 print('Gerber Files Found:')
-# List Comprehension https://treyhunner.com/2015/12/python-list-comprehensions-now-in-color/
-# For all files in the Gerber and Drill folder, if the extension is in the gerber extension dictionary, add it to the keep list.
+# For all files/folders in the Gerber and Drill folder, if it is a file continue
 for file in [file for file in os.listdir('..\\Cam\\Gerber and Drill\\') if os.path.isfile('..\\Cam\\Gerber and Drill\\' + file)]:
-    #if the file name is the board number and the extension is in the dictionary
-    if file.rsplit('.', 1)[0] == pcb_number and file.rsplit('.', 1)[1] in gerber_ext:
-        print(file + gerber_ext[file.rsplit('.', 1)[1]])
-        keep_gerbers.append(file)
-    # Most of this checking if the extension starts with extension in list and ends with digit could be replaced with regular expression, also verifies the board number
-    for extension in rep_gerber_ext:
-        if file.rsplit('.', 1)[0] == pcb_number and file.rsplit('.', 1)[1].startswith(extension):
-            # Remove the extension prefix to get number
-            if file.rsplit('.', 1)[1].replace(extension, '').isdigit():
-                print(file + gerber_ext[extension] + file.rsplit('.', 1)[1].replace(extension, ''))
-                keep_gerbers.append(file)
+    # For the key and values in the Gerber dictionary
+    for gerber, label in gerber_ext.items():
+        # If that file matches the key, keep it and print the label (value)
+        if re.search(gerber, file, re.IGNORECASE):
+            gerbers_keep.append(file)
+            print(file + label, end = '')
+            # If its a numbered gerber, print what number to the user after its description
+            if file[-1].isdigit():
+                # Strip everything except the number from the key, then strip that from the file name 
+                print(file.strip(gerber.strip('[0-9]+')))
+            else:
+                # Prints end line that was withheld until number check
+                print()
 print()
 
 # Find the Aegis Sync BOMs
+###################################################################################################
+
 print('Aegis Sync Excel BOMs:')
 # For each assembly, see if the its BOM is in the reports folder
 for assembly in assemblies:
+    excel = ''
+    text = ''
+    # Find if the excel and text files exist, if so remember them for later
+    for file in os.listdir('..\\Mfg-Data\\'):
+        if re.search('Aegis[ ,_]Sync[ ,_]' + assembly + '.xls(x)?', file, re.IGNORECASE):
+            excel = file
+        elif re.search('Aegis[ ,_]Sync[ ,_]' + assembly + '.txt', file, re.IGNORECASE):
+            text = file
+            
     # If both txt and excel files are there, see which one is newer
-    if os.path.isfile('..\\Mfg-Data\\Aegis Sync_' + assembly + '.xlsx') and os.path.isfile('..\\Mfg-Data\\Aegis Sync_' + assembly + '.txt'):
+    if excel and text:
         # If the excel is newer, alert user and save only excel to be saved
-        if os.path.getmtime('..\\Mfg-Data\\Aegis Sync_' + assembly + '.xlsx') >= os.path.getmtime('..\\Mfg-Data\\Aegis Sync_' + assembly + '.txt'):
-            print(assembly + '.txt Aegis Sync File Found - OUT OF DATE')
-            print(assembly + '.xlsx Aegis Sync File Found')
-            aegis_boms.append('Aegis Sync_' + assembly + '.xlsx')
-            mfgdata_files.append('Aegis Sync_' + assembly + '.xlsx')
+        if os.path.getmtime('..\\Mfg-Data\\' + excel) >= os.path.getmtime('..\\Mfg-Data\\' + text):
+            print(text + ' File Found - OUT OF DATE')
+            print(excel + ' File Found')
+            aegis_boms.append(excel)
+            mfgdata_keep.append(excel)
         # If the text is newer, alert user and save only excel to be saved
         else:
-            print(assembly + '.txt Aegis Sync File Found')
-            print(assembly + '.xlsx Aegis Sync File Found - Marked For Deletion')
-            mfgdata_files.append('Aegis Sync_' + assembly + '.txt')
+            print(text + ' File Found')
+            print(text + ' File Found - Marked For Deletion')
+            mfgdata_keep.append(text)
     # If just the excel file is there add it to be saved
-    elif os.path.isfile('..\\Mfg-Data\\Aegis Sync_' + assembly + '.xlsx'):
-        print(assembly + '.xlsx Aegis Sync File Found')
-        aegis_boms.append('Aegis Sync_' + assembly + '.xlsx')
-        mfgdata_files.append('Aegis Sync_' + assembly + '.xlsx')
+    elif os.path.isfile('..\\Mfg-Data\\' + excel):
+        print(excel + ' File Found')
+        aegis_boms.append(excel)
+        mfgdata_keep.append(excel)
     # Just the text BOM was found
-    elif os.path.isfile('..\\Mfg-Data\\Aegis Sync_' + assembly + '.txt'):
-        print(assembly + '.txt Aegis Sync File Found')
-        mfgdata_files.append('Aegis Sync_' + assembly + '.txt')
+    elif os.path.isfile('..\\Mfg-Data\\' + text):
+        print(text + ' File Found - Excel missing')
+        mfgdata_keep.append(text)
     else:
         print(assembly + ' MISSING')
-    
+
 ###################################################################################################
 #################################     Sort the assembly BOMs     ##################################
 ###################################################################################################
 
-print('\nSorting Assembly BOMs')
+print('\n\nSorting Assembly BOMs')
 print('*********************')
 
 # Ask the user if they would like to sort all assembly BOM
 response_all = ''
 if len(assembly_boms) > 1:
     while response_all not in ('y', 'yes', 'n', 'no'):
-        response_all = input('Would you like to sort all assembly BOMs?: ')
+        response_all = input('Would you like to sort all assembly BOMs?: ').lower()
         print()
 else:
     response_all = 'no'
@@ -252,7 +259,7 @@ for assembly_bom in assembly_boms:
     response2 = ''
     if re.search('^n(o)?$', response_all, re.IGNORECASE):
             while response2 not in ('y', 'yes', 'n', 'no'):
-                response2 = input(f'Would you like to sort {assembly_bom}?: ')
+                response2 = input(f'Would you like to sort {assembly_bom}?: ').lower()
     if re.search('^n(o)?$', response2, re.IGNORECASE) and re.search('^n(o)?$', response_all, re.IGNORECASE):
         print(assembly_bom + ' Skipped\n')
         continue
@@ -272,6 +279,7 @@ for assembly_bom in assembly_boms:
     # Font for default lines
     default_font  = NamedStyle(name = 'default_font')
     default_font.font = Font(name = 'Verdana', size = 12)
+    default_font.alignment = Alignment(horizontal = 'left')
     # Something to tell when the BOM starts
     header_row = 0
     # A list that will contain dictionaries of the parts
@@ -303,11 +311,11 @@ for assembly_bom in assembly_boms:
                          break
             # Add the part as a dictionary to the list of parts. Make them strings to allow sorting to work.
             bom_content.append({'part_number': str(part_number),
-                                'quantity': quantity,
+                                'quantity'   : quantity,
                                 'description': str(description),
-                                'designator': str(designator),
-                                'layer': str(layer),
-                                'fitted': str(fitted)})
+                                'designator' : str(designator),
+                                'layer'      : str(layer),
+                                'fitted'     : str(fitted)})
         # If the row equals the header Altium uses, singal that the header has been found
         if str(part_number) + str(quantity) + str(description) + str(designator) + str(layer) + str(fitted) == 'LibRefQuantityDescriptionDesignatorLayerFitted':
             header_row = row
@@ -316,7 +324,7 @@ for assembly_bom in assembly_boms:
         print(f'No Altium header row found for {assembly_bom}. Unable to sort...\n')
         continue
     
-    # Sort the BOMs
+    # Sort the BOMs, Least priority to most. Sorting doesnt change order of those who match sort key
     bom_content.sort(key = lambda k: k['part_number'])
     bom_content.sort(key = lambda k: k['fitted'])
     bom_content.sort(key = lambda k: k['layer'], reverse = True)
@@ -359,7 +367,7 @@ for assembly_bom in assembly_boms:
         sheet.cell(row = row, column = 1).value = part['part_number']
         sheet['A' + str(row)].style = default_font
         if pattern_fill == True: sheet['A' + str(row)].fill = PatternFill('solid', fgColor='D9D9D9')
-        sheet.cell(row = row, column = 2).value = part['quantity']
+        sheet.cell(row = row, column = 2).value = str(part['quantity'])
         sheet['B' + str(row)].style = default_font
         if pattern_fill == True: sheet['B' + str(row)].fill = PatternFill('solid', fgColor='D9D9D9')
         sheet.cell(row = row, column = 3).value = part['description']
@@ -390,7 +398,7 @@ print('*************************')
 response = ''
 if len(sap_boms) > 1:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('Would you like to clean all SAP Import files?: ')
+        response = input('Would you like to clean all SAP Import files?: ').lower()
         print()
 else:
     response = 'no'
@@ -398,11 +406,14 @@ else:
 # Do it for all assembly BOMs found
 for sap_bom in sap_boms:
 
+    # List to store the dictionary of data
+    sap_content = []
+
     # Ask the user if they would like to sort each assembly BOM if they didnt want to do all
     response2 = ''
     if re.search('^n(o)?$', response, re.IGNORECASE):
             while response2 not in ('y', 'yes', 'n', 'no'):
-                response2 = input(f'Would you like to clean {sap_bom}?: ')
+                response2 = input(f'Would you like to clean {sap_bom}?: ').lower()
     if re.search('^n(o)?$', response2, re.IGNORECASE) and re.search('^n(o)?$', response, re.IGNORECASE):
         print(sap_bom + ' Skipped\n')
         continue
@@ -411,20 +422,47 @@ for sap_bom in sap_boms:
     # Open the excel file and go in the first sheet
     wb = openpyxl.load_workbook('.\\Reports\\' + sap_bom)
     sheet = wb['Sheet1']
-
-    # Verify the header row is there
+    
+    # Read the data
+    # Verify the header row is present
     if sheet.cell(1, 2).value != 'LibRef' or sheet.cell(1, 4).value != 'Quantity':
         print(f'No Altium header row found for {sap_bom}. Unable to sort...\n')
         continue
+    # For each row of data
+    for row in range(2, sheet.max_row + 1):
+        # Read the data for the rows and store temporarily
+        part_number    = sheet.cell(row, 2).value
+        quantity       = sheet.cell(row, 4).value
+        if part_number is not None:
+            sap_content.append({'part_number' : str(part_number),
+                                'quantity'    : quantity
+                                })
+    # Sort the BOM
+    sap_content.sort(key = lambda k: k['part_number'])
 
-    # Move all cells up to delete header
-    for row in range(1, sheet.max_row + 1):
-        for column in range(1, 5):
-            sheet.cell(row = row, column = column).value = sheet.cell(row = row + 1, column = column).value 
+    # Delete the old rows of data 
+    sheet.delete_rows(1, sheet.max_row)
+    
+    # Write the data
+    row = 1
+    for part in sap_content:
+        sheet.cell(row = row, column = 1).value = 'L'
+        sheet.cell(row = row, column = 2).value = part['part_number']
+        sheet.cell(row = row, column = 4).value = part['quantity']
+        row += 1
 
     # Save the data
     wb.save('.\\Reports\\' + sap_bom)
     print(sap_bom + ' cleaning complete\n')
+    
+'''
+    # Move all cells up to delete header
+    for row in range(1, sheet.max_row + 1):
+        for column in range(1, 5):
+            sheet.cell(row = row, column = column).value = sheet.cell(row = row + 1, column = column).value
+            '''
+
+
 
 ###################################################################################################
 #################################     Tab Delimit Aegis Sync     ##################################
@@ -437,7 +475,7 @@ print('****************************')
 response = ''
 if len(aegis_boms) > 1:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('Would you like to create all Aegis sync files?: ')
+        response = input('Would you like to create all Aegis sync files?: ').lower()
         print()
 else:
     response = 'no'
@@ -449,7 +487,7 @@ for excel in aegis_boms:
     response2 = ''
     if re.search('^n(o)?$', response, re.IGNORECASE):
             while response2 not in ('y', 'yes', 'n', 'no'):
-                response2 = input(f'Would you like to make text file for {excel}?: ')
+                response2 = input(f'Would you like to make text file for {excel}?: ').lower()
     if re.search('^n(o)?$', response2, re.IGNORECASE) and re.search('^n(o)?$', response, re.IGNORECASE):
         print(sap_bom + ' Skipped\n')
         continue
@@ -472,15 +510,20 @@ for excel in aegis_boms:
             file.writerow([cell.value for cell in row])
 
     # Finished with conversion, no need to save excel
-    print(excel + ' converted to text\n')
+    print(excel + ' converted to text\n\n')
 
-    # If the excel is in mfgdata_files, replace it with the text
-    mfgdata_files = [excel.rsplit('.', 1)[0] + '.txt' if x == (excel) else x for x in mfgdata_files]
+    # If the excel is in mfgdata_keep, replace it with the text
+    mfgdata_keep = [excel.rsplit('.', 1)[0] + '.txt' if x == (excel) else x for x in mfgdata_keep]
+
+# Print if none edited
+if not aegis_boms:
+    print('No files to convert\n\n')    
     
 ###################################################################################################
 ###################################     Remove Junk Files     #####################################
 ###################################################################################################
 
+print('***********************')
 print('Deleting Unneeded Files')
 print('***********************\n')
 
@@ -493,28 +536,39 @@ print('**************')
 # Array to store files that it finds unneeded. Ensures whats deleted is what user saw
 reports_unneeded = []
 
-# Prints all the files in Reports folder that are not in the list to keep
-for unneeded_file in [file for file in os.listdir('.\\Reports\\') if file not in reports_files]:
-    reports_unneeded.append(unneeded_file)
-    print(unneeded_file)
+# Scan through each file in the reports folder
+for report_file in os.listdir('.\\Reports\\'):
+    valid = False
+    # Scan through each file in valid reports list, if it matches the file found mark it valid, if its not valid add it to delete list
+    for unneeded_file in [report_file for file in reports_keep if re.search(file, report_file, re.IGNORECASE)]:
+        valid = True
+    if valid == False:
+        reports_unneeded.append(report_file)
+        print(report_file)
 
 # Ask if ok to delete all unneeded file from Reports
 response = ''
 if reports_unneeded:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('OK to delete all unneeded files from Reports?')
+        response = input('OK to delete all unneeded files from Reports?').lower()
     if re.search('^y(es)?$', response, re.IGNORECASE):
         # Delete all the files
         for unneeded_file in reports_unneeded:
             # Verify its a file and if so try to delete, if not report back
             if os.path.isfile('.\\Reports\\' + unneeded_file):
                 try:
-                    os.remove('.\\Reports\\' + unneeded_file)
+                    if not os.path.exists('..\\Deleted\\'): # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                        os.mkdir('..\\Deleted\\') # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                    shutil.move('.\\Reports\\' + unneeded_file, '..\\Deleted\\' + unneeded_file) # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+#                    os.remove('.\\Reports\\' + unneeded_file)
                 except OSError as e: 
                     print ("Error: %s - %s." % (e.filename, e.strerror))
             else:
                 try:
-                    shutil.rmtree('.\\Reports\\' + unneeded_file)
+                    if not os.path.exists('..\\Deleted\\'): # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                        os.mkdir('..\\Deleted\\') # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                    shutil.move('.\\Reports\\' + unneeded_file, '..\\Deleted\\' + unneeded_file) # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+#                    shutil.rmtree('.\\Reports\\' + unneeded_file)
                 except OSError as e:
                     print ("Error: %s - %s." % (e.filename, e.strerror))
 print('Reports folder done\n')
@@ -528,45 +582,39 @@ print('*************')
 # Array to store files that it finds unneeded. Ensures whats deleted is what user saw
 source_unneeded = []
 
-# Danger, mess ahead. RE searches with variable names would fix a lot
-# Finds all unneeded files that aren't in the list, schematic docs, and handles _vO1 files
-for file in os.listdir('.\\Source\\'):
-    # Dont even continue if its already a valid file
-    if file not in source_files:
-        # if the item is a file, keep checking, if its a folder delete
-        if os.path.isfile('.\\Source\\' + file):
-            # the file is schematic dont add it
-            if not re.search('schdoc', file.rsplit('.', 1)[1], re.IGNORECASE):
-                # for non schematic files, if has _v01 in the name keep checking, otherwise add it
-                if re.search('_v[0-9]+$', file.rsplit('.', 1)[0], re.IGNORECASE):
-                    # if removing _v01 still doesnt match, add it
-                    if file.rsplit('_', 1)[0] + '.' + file.rsplit('.', 1)[1] not in source_files:
-                        source_unneeded.append(file)
-                else:
-                    source_unneeded.append(file)
-        else:
-            source_unneeded.append(file)
-# Print all files 
-for unneeded_file in source_unneeded:
-    print(unneeded_file)
+# Scan through each file in the source folder
+for source_file in os.listdir('.\\Source\\'):
+    valid = False
+    # Scan through each file in valid source list, if it matches the file found mark it valid, if its not valid add it to delete list
+    for unneeded_file in [source_file for file in source_keep if re.search(file, source_file, re.IGNORECASE)]:
+        valid = True
+    if valid == False:
+        source_unneeded.append(source_file)
+        print(source_file)
 
 # Ask if OK to delete all unneeded file from Reports
 response = ''
 if source_unneeded:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('OK to delete all unneeded files from Source?')
+        response = input('OK to delete all unneeded files from Source?').lower()
     if re.search('^y(es)?$', response, re.IGNORECASE):
         # Delete all the files
         for unneeded_file in source_unneeded:
             # Verify its a file and if so try to delete, if not report back
             if os.path.isfile('.\\Source\\' + unneeded_file):
                 try:
-                    os.remove('.\\Source\\' + unneeded_file)
+                    if not os.path.exists('..\\Deleted\\'): # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                        os.mkdir('..\\Deleted\\') # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                    shutil.move('.\\Source\\' + unneeded_file, '..\\Deleted\\' + unneeded_file) # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+#                    os.remove('.\\Source\\' + unneeded_file)
                 except OSError as e: 
                     print ("Error: %s - %s." % (e.filename, e.strerror))
             else:
                 try:
-                    shutil.rmtree('.\\Source\\' + unneeded_file)
+                    if not os.path.exists('..\\Deleted\\'): # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                        os.mkdir('..\\Deleted\\') # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                    shutil.move('.\\Source\\' + unneeded_file, '..\\Deleted\\' + unneeded_file) # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+#                    shutil.rmtree('.\\Source\\' + unneeded_file)
                 except OSError as e:
                     print ("Error: %s - %s." % (e.filename, e.strerror))
 print('Source folder done\n')
@@ -580,45 +628,39 @@ print('**************')
 # Array to store files that it finds unneeded. Ensures whats deleted is what user saw
 cam_unneeded = []
 
-# Danger, mess ahead. RE searches with variable names would fix a lot
-# Finds all unneeded files that aren't in the list, schematic docs, and handles _vO1 files
-for file in os.listdir('..\\Cam\\'):
-    # Don t even continue if its already a valid file, handles valid folder names here
-    if file not in cam_files:
-        # If the item is a file, keep checking, if its a folder delete
-        if os.path.isfile('..\\Cam\\' + file):
-            # If the file starts with a board number
-            if re.search('^' + pcb_number, file, re.IGNORECASE):
-                # And not .zip or pdf, delete it
-                if not (re.search('.zip$', file, re.IGNORECASE) or re.search('.pdf$', file, re.IGNORECASE)):
-                    cam_unneeded.append(file)
-            # Doesnt start with a board number but need to start with spec and be a drawing
-            elif not (re.search('^Spec_', file, re.IGNORECASE) or re.search('.dwg$', file, re.IGNORECASE)):
-                cam_unneeded.append(file)
-        else:
-            cam_unneeded.append(file)
-
-# Print all files 
-for unneeded_file in cam_unneeded:
-    print(unneeded_file)
+# Scan through each file in the Cam folder
+for cam_file in os.listdir('..\\Cam\\'):
+    valid = False
+    # Scan through each file in valid cam list, if it matches the file found mark it valid, if its not valid add it to delete list
+    for unneeded_file in [cam_file for file in cam_keep if re.search(file, cam_file, re.IGNORECASE)]:
+        valid = True
+    if valid == False:
+        cam_unneeded.append(cam_file)
+        print(cam_file)
 
 # Ask if OK to delete all unneeded file from Reports
 response = ''
 if cam_unneeded:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('OK to delete all unneeded files from Reports?')
+        response = input('OK to delete all unneeded files from Reports?').lower()
     if re.search('^y(es)?$', response, re.IGNORECASE):
         # Delete all the files
         for unneeded_file in cam_unneeded:
             # Verify its a file and if so try to delete, if not report back
             if os.path.isfile('..\\Cam\\' + unneeded_file):
                 try:
-                    os.remove('..\\Cam\\' + unneeded_file)
+                    if not os.path.exists('..\\Deleted\\'): # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                        os.mkdir('..\\Deleted\\') # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                    shutil.move('..\\Cam\\' + unneeded_file, '..\\Deleted\\' + unneeded_file) # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+#                    os.remove('..\\Cam\\' + unneeded_file)
                 except OSError as e: 
                     print ("Error: %s - %s." % (e.filename, e.strerror))
             else:
                 try:
-                    shutil.rmtree('..\\Cam\\' + unneeded_file)
+                    if not os.path.exists('..\\Deleted\\'): # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                        os.mkdir('..\\Deleted\\') # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                    shutil.move('..\\Cam\\' + unneeded_file, '..\\Deleted\\' + unneeded_file) # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+#                    shutil.rmtree('..\\Cam\\' + unneeded_file)
                 except OSError as e:
                     print ("Error: %s - %s." % (e.filename, e.strerror))
 print('Cam folder done\n')
@@ -633,7 +675,7 @@ print('***********************')
 gerber_unneeded = []
 
 # Prints all the files in Reports folder that are not in the list to keep
-for unneeded_file in [file for file in os.listdir('..\\Cam\\Gerber and Drill') if file not in keep_gerbers]:
+for unneeded_file in [file for file in os.listdir('..\\Cam\\Gerber and Drill') if file not in gerbers_keep]:
     gerber_unneeded.append(unneeded_file)
     print(unneeded_file)
 
@@ -641,20 +683,25 @@ for unneeded_file in [file for file in os.listdir('..\\Cam\\Gerber and Drill') i
 response = ''
 if gerber_unneeded:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('OK to delete all unneeded files from Gerber and Drill?')
+        response = input('OK to delete all unneeded files from Gerber and Drill?').lower()
     if re.search('^y(es)?$', response, re.IGNORECASE):
         # Delete all the files
         for unneeded_file in gerber_unneeded:
-            print(unneeded_file)
             # Verify its a file and if so try to delete, if not report back
             if os.path.isfile('..\\Cam\\Gerber and Drill\\' + unneeded_file):
                 try:
-                    os.remove('..\\Cam\\Gerber and Drill\\' + unneeded_file)
+                    if not os.path.exists('..\\Deleted\\'): # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                        os.mkdir('..\\Deleted\\') # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                    shutil.move('..\\Cam\\Gerber and Drill\\' + unneeded_file, '..\\Deleted\\' + unneeded_file) # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+#                    os.remove('..\\Cam\\Gerber and Drill\\' + unneeded_file)
                 except OSError as e: 
                     print ("Error: %s - %s." % (e.filename, e.strerror))
             else:
                 try:
-                    shutil.rmtree('..\\Cam\\Gerber and Drill\\' + unneeded_file)
+                    if not os.path.exists('..\\Deleted\\'): # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                        os.mkdir('..\\Deleted\\') # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                    shutil.move('..\\Cam\\Gerber and Drill\\' + unneeded_file, '..\\Deleted\\' + unneeded_file) # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+#                    shutil.rmtree('..\\Cam\\Gerber and Drill\\' + unneeded_file)
                 except OSError as e:
                     print ("Error: %s - %s." % (e.filename, e.strerror))
 print('Gerber and Drill folder done\n')
@@ -668,33 +715,44 @@ print('***************')
 # Array to store files that it finds unneeded. Ensures whats deleted is what user saw
 mfg_unneeded = []
 
-# Prints all the files in Reports folder that are not in the list to keep
-for unneeded_file in [file for file in os.listdir('..\\Mfg-Data\\') if file not in mfgdata_files]:
-    mfg_unneeded.append(unneeded_file)
-    print(unneeded_file)
+# Scan through each file in the Mfg-Data folder
+for mfgdata_file in os.listdir('..\\Mfg-Data\\'):
+    valid = False
+    # Scan through each file in valid source list, if it matches the file found mark it valid, if its not valid add it to delete list
+    for unneeded_file in [mfgdata_file for file in mfgdata_keep if re.search(file, mfgdata_file, re.IGNORECASE)]:
+        valid = True
+    if valid == False:
+        mfg_unneeded.append(mfgdata_file)
+        print(mfgdata_file)
+        
 
 # Ask if ok to delete all unneeded file from Reports
 response = ''
 if mfg_unneeded:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('OK to delete all unneeded files from Mfg-Data?')
+        response = input('OK to delete all unneeded files from Mfg-Data?').lower()
     if re.search('^y(es)?$', response, re.IGNORECASE):
         # Delete all the files
         for unneeded_file in mfg_unneeded:
             # Verify its a file and if so try to delete, if not report back
-            print('..\\Mfg-Data\\' + unneeded_file)
             if os.path.isfile('..\\Mfg-Data\\' + unneeded_file):
                 try:
-                    os.remove('..\\Mfg-Data\\' + unneeded_file)
+                    if not os.path.exists('..\\Deleted\\'): # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                        os.mkdir('..\\Deleted\\') # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                    shutil.move('..\\Mfg-Data\\' + unneeded_file, '..\\Deleted\\' + unneeded_file) # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+#                    os.remove('..\\Mfg-Data\\' + unneeded_file)
                 except OSError as e: 
                     print ("Error: %s - %s." % (e.filename, e.strerror))
             else:
                 try:
-                    shutil.rmtree('..\\Mfg-Data\\' + unneeded_file)
+                    if not os.path.exists('..\\Deleted\\'): # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                        os.mkdir('..\\Deleted\\') # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+                    shutil.move('..\\Mfg-Data\\' + unneeded_file, '..\\Deleted\\' + unneeded_file) # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+#                    shutil.rmtree('..\\Mfg-Data\\' + unneeded_file)
                 except OSError as e:
                     print ("Error: %s - %s." % (e.filename, e.strerror))
 print('Mfg-Data folder done\n')
 
 # Change working directory back to default to prevent program from preventing deleting project file
 os.chdir(owd)
-print('Documentation Cleanup Complete!!')
+input('Documentation Cleanup Complete!! Press Enter To Exit')
