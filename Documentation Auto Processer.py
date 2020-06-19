@@ -12,7 +12,7 @@ import shutil # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
 ###################################################################################################
 ##############     Get the project directory, project number, and all assemblies     ##############
 ###################################################################################################
-
+print('Documentation Auto Processer v0.2.1\n')
 # The number of assemblies found
 assembly_count = 0
 # All the assemblies in the project
@@ -27,12 +27,12 @@ if project_path[0] == '"' and project_path[-1] == '"':
 
 # Verify that it is an Altium project file given ie ending in .PrjPcb
 if not re.search('\.PrjPcb$', project_path, re.IGNORECASE):
-    print('File linked to is not an Altium project')
+    input('File linked to is not an Altium project. Press enter to exit')
     exit()
 
 # Verify the file is at the location of the user input
 if not os.path.isfile(project_path):
-    print('Project not found')
+    input('Project not found. Press enter to exit')
     exit()
 
 # Get the board number. Take the Altium project path, rsplit the last \ and take the second string of the 2 new ones
@@ -41,7 +41,7 @@ pcb_number = project_path.rsplit('\\', 1)[1].rsplit('_', 1)[0]
 
 # Verifies that the board number matches the template of 1234B4657A
 if not re.search('^\d\d\d\dB46\d\d[A-Z]$', pcb_number):
-    print('Error determining the project number, project number found ', + pcb_number)
+    input('Error determining the project number, project number found ', + pcb_number + '. Press enter to exit')
     exit()
     
 # Get the project Directory. Take the Altium project path, rsplit the last \ and take the first string of the 2 new ones
@@ -455,15 +455,6 @@ for sap_bom in sap_boms:
     wb.save('.\\Reports\\' + sap_bom)
     print(sap_bom + ' cleaning complete\n')
     
-'''
-    # Move all cells up to delete header
-    for row in range(1, sheet.max_row + 1):
-        for column in range(1, 5):
-            sheet.cell(row = row, column = column).value = sheet.cell(row = row + 1, column = column).value
-            '''
-
-
-
 ###################################################################################################
 #################################     Tab Delimit Aegis Sync     ##################################
 ###################################################################################################
