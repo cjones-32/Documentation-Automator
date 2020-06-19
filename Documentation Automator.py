@@ -12,7 +12,8 @@ import shutil # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
 ###################################################################################################
 ##############     Get the project directory, project number, and all assemblies     ##############
 ###################################################################################################
-print('Documentation Auto Processer v0.2.1\n')
+
+print('Documentation Automator v0.2.2\n')
 # The number of assemblies found
 assembly_count = 0
 # All the assemblies in the project
