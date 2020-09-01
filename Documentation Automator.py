@@ -13,7 +13,7 @@ import shutil # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
 ##############     Get the project directory, project number, and all assemblies     ##############
 ###################################################################################################
 
-print('Documentation Automator v0.2.2\n')
+print('Documentation Automator v0.3.0\n')
 # The number of assemblies found
 assembly_count = 0
 # All the assemblies in the project
@@ -28,21 +28,32 @@ if project_path[0] == '"' and project_path[-1] == '"':
 
 # Verify that it is an Altium project file given ie ending in .PrjPcb
 if not re.search('\.PrjPcb$', project_path, re.IGNORECASE):
-    input('File linked to is not an Altium project. Press enter to exit')
+    input('\nFile linked to is not an Altium project. Press enter to exit.')
     exit()
 
 # Verify the file is at the location of the user input
 if not os.path.isfile(project_path):
-    input('Project not found. Press enter to exit')
+    input('\nProject not found. Press enter to exit.')
     exit()
 
-# Get the board number. Take the Altium project path, rsplit the last \ and take the second string of the 2 new ones
-# Then rsplit again by underscore to come up with board name in the end.
-pcb_number = project_path.rsplit('\\', 1)[1].rsplit('_', 1)[0]
+# Get the board number.
+# Take the Altium project path, rsplit the last \ if present and take the second string of the 2 new ones
+if '\\' in project_path:
+    pcb_number = project_path.rsplit('\\', 1)[1]
 
+# Then rsplit again by underscore if present to come up with board name in the end.
+if '_' in pcb_number:
+    pcb_number = pcb_number.rsplit('_', 1)[0]
+else:
+    if re.search('^\d\d\d\dB46\d\d[A-Z]$', pcb_number):
+        input('\nError: Issue determining the project number, project number found: \'' + pcb_number.rsplit('.', 1)[0] + '\'.\n_v0x possibly missing from project name. Press enter to exit.')
+    else:
+        input('\nError: Invalid project number, project number found: \'' + pcb_numberrsplit('.', 1)[0] + '\'. Press enter to exit.')
+    exit()
+ 
 # Verifies that the board number matches the template of 1234B4657A
 if not re.search('^\d\d\d\dB46\d\d[A-Z]$', pcb_number):
-    input('Error determining the project number, project number found ', + pcb_number + '. Press enter to exit')
+    input('\nError: Invalid project number, project number found: \'' + pcb_number + '\'. Press enter to exit.')
     exit()
     
 # Get the project Directory. Take the Altium project path, rsplit the last \ and take the first string of the 2 new ones
@@ -223,15 +234,15 @@ for assembly in assemblies:
         # If the text is newer, alert user and save only excel to be saved
         else:
             print(text + ' File Found')
-            print(text + ' File Found - Marked For Deletion')
+            print(excel + ' File Found - Marked For Deletion')
             mfgdata_keep.append(text)
     # If just the excel file is there add it to be saved
-    elif os.path.isfile('..\\Mfg-Data\\' + excel):
+    elif excel:
         print(excel + ' File Found')
         aegis_boms.append(excel)
         mfgdata_keep.append(excel)
     # Just the text BOM was found
-    elif os.path.isfile('..\\Mfg-Data\\' + text):
+    elif text:
         print(text + ' File Found - Excel missing')
         mfgdata_keep.append(text)
     else:
@@ -420,6 +431,7 @@ for sap_bom in sap_boms:
         continue
     
     print('Cleaning ' + sap_bom + '...')
+    
     # Open the excel file and go in the first sheet
     wb = openpyxl.load_workbook('.\\Reports\\' + sap_bom)
     sheet = wb['Sheet1']
@@ -432,8 +444,19 @@ for sap_bom in sap_boms:
     # For each row of data
     for row in range(2, sheet.max_row + 1):
         # Read the data for the rows and store temporarily
-        part_number    = sheet.cell(row, 2).value
-        quantity       = sheet.cell(row, 4).value
+        part_number = sheet.cell(row, 2).value
+        # If there is a software version found, prompt for version
+        if re.search('^\d\d\d\dS\d\d\d\d-X$', part_number, re.IGNORECASE):
+            print('Software found')
+            # Get the version from user and confirm
+            while 1:
+                version = input('Undefined software version found: \'' + part_number.split('-', 1)[0] + '-X\', what version should it be? \n')
+                part_number = part_number.split('-', 1)[0] + '-' + version
+                verify = input(part_number + ' - Is this correct?')
+                if re.search('^y(es)?$', verify, re.IGNORECASE):
+                    break
+        quantity = sheet.cell(row, 4).value
+        # If the part number is not none, add that row tothe list
         if part_number is not None:
             sap_content.append({'part_number' : str(part_number),
                                 'quantity'    : quantity
@@ -542,7 +565,7 @@ for report_file in os.listdir('.\\Reports\\'):
 response = ''
 if reports_unneeded:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('OK to delete all unneeded files from Reports?').lower()
+        response = input('OK to delete all unneeded files from Reports? ').lower()
     if re.search('^y(es)?$', response, re.IGNORECASE):
         # Delete all the files
         for unneeded_file in reports_unneeded:
@@ -588,7 +611,7 @@ for source_file in os.listdir('.\\Source\\'):
 response = ''
 if source_unneeded:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('OK to delete all unneeded files from Source?').lower()
+        response = input('OK to delete all unneeded files from Source? ').lower()
     if re.search('^y(es)?$', response, re.IGNORECASE):
         # Delete all the files
         for unneeded_file in source_unneeded:
@@ -634,7 +657,7 @@ for cam_file in os.listdir('..\\Cam\\'):
 response = ''
 if cam_unneeded:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('OK to delete all unneeded files from Reports?').lower()
+        response = input('OK to delete all unneeded files from CAM? ').lower()
     if re.search('^y(es)?$', response, re.IGNORECASE):
         # Delete all the files
         for unneeded_file in cam_unneeded:
@@ -675,7 +698,7 @@ for unneeded_file in [file for file in os.listdir('..\\Cam\\Gerber and Drill') i
 response = ''
 if gerber_unneeded:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('OK to delete all unneeded files from Gerber and Drill?').lower()
+        response = input('OK to delete all unneeded files from Gerber and Drill? ').lower()
     if re.search('^y(es)?$', response, re.IGNORECASE):
         # Delete all the files
         for unneeded_file in gerber_unneeded:
@@ -722,7 +745,7 @@ for mfgdata_file in os.listdir('..\\Mfg-Data\\'):
 response = ''
 if mfg_unneeded:
     while response not in ('y', 'yes', 'n', 'no'):
-        response = input('OK to delete all unneeded files from Mfg-Data?').lower()
+        response = input('OK to delete all unneeded files from Mfg-Data? ').lower()
     if re.search('^y(es)?$', response, re.IGNORECASE):
         # Delete all the files
         for unneeded_file in mfg_unneeded:
@@ -747,4 +770,4 @@ print('Mfg-Data folder done\n')
 
 # Change working directory back to default to prevent program from preventing deleting project file
 os.chdir(owd)
-input('Documentation Cleanup Complete!! Press Enter To Exit')
+input('Documentation cleanup complete!! Press enter to exit.')
