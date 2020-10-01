@@ -13,7 +13,7 @@ import shutil # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
 ##############     Get the project directory, project number, and all assemblies     ##############
 ###################################################################################################
 
-print('Documentation Automator v0.3.0\n')
+print('Documentation Automator v0.4.0\n')
 # The number of assemblies found
 assembly_count = 0
 # All the assemblies in the project
@@ -41,15 +41,12 @@ if not os.path.isfile(project_path):
 if '\\' in project_path:
     pcb_number = project_path.rsplit('\\', 1)[1]
 
-# Then rsplit again by underscore if present to come up with board name in the end.
+# Then rsplit again by underscore if _v0x is present to come up with board name in the end.
 if '_' in pcb_number:
     pcb_number = pcb_number.rsplit('_', 1)[0]
+# If _v0x is not present, remove the file extension and check validity.
 else:
-    if re.search('^\d\d\d\dB46\d\d[A-Z]$', pcb_number):
-        input('\nError: Issue determining the project number, project number found: \'' + pcb_number.rsplit('.', 1)[0] + '\'.\n_v0x possibly missing from project name. Press enter to exit.')
-    else:
-        input('\nError: Invalid project number, project number found: \'' + pcb_numberrsplit('.', 1)[0] + '\'. Press enter to exit.')
-    exit()
+    pcb_number = pcb_number.rsplit('.', 1)[0]
  
 # Verifies that the board number matches the template of 1234B4657A
 if not re.search('^\d\d\d\dB46\d\d[A-Z]$', pcb_number):
@@ -104,8 +101,8 @@ reports_keep = ['^' + pcb_number + '[ ,_]Order[ ,_]Information.xls(x)?$',
                 ]
 
 # List of files for Source folder we want to keep
-source_keep = ['^Assy[ ,_]' + pcb_number + '_v[0-9]+.PCBDwf$',
-                '^PCB[ ,_]' + pcb_number + '_v[0-9]+.PcbDoc$',
+source_keep = ['^Assy[ ,_]' + pcb_number + '(_v[0-9])?.PCBDwf$',
+                '^PCB[ ,_]' + pcb_number + '(_v[0-9])?.PcbDoc$',
                 '.SchDoc$'
                 ]
 
@@ -291,7 +288,7 @@ for assembly_bom in assembly_boms:
     # Font for default lines
     default_font  = NamedStyle(name = 'default_font')
     default_font.font = Font(name = 'Verdana', size = 12)
-    default_font.alignment = Alignment(horizontal = 'left')
+    default_font.alignment = Alignment(horizontal = 'left', vertical = 'top')
     # Something to tell when the BOM starts
     header_row = 0
     # A list that will contain dictionaries of the parts
@@ -398,6 +395,7 @@ for assembly_bom in assembly_boms:
     # Save the excel
     wb.save('.\\Reports\\' + assembly_bom)
     print(assembly_bom + ' sorting complete\n')
+    os.startfile('.\\Reports\\' + assembly_bom)
 
 ###################################################################################################
 #################################     Clean SAP Import Files     ##################################
