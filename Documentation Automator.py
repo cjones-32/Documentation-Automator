@@ -5,15 +5,365 @@ import shutil
 import re
 import csv
 import openpyxl
+import zipfile
+import time
 from openpyxl.styles import NamedStyle, Font, Border, Side, PatternFill, Alignment
 
 import shutil # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
 
 ###################################################################################################
-##############     Get the project directory, project number, and all assemblies     ##############
+###################################################################################################
+###############################     Unzip the packaged project     ################################
+###################################################################################################
 ###################################################################################################
 
-print('Documentation Automator v0.4.0\n')
+# Global Variables
+zip_pcb_number = ''
+files_replaced = {}
+
+# Delete full folder or individual files
+def remove_file_dir(path):
+    if os.path.exists(path):
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        elif os.path.isfile(path):
+            os.remove(path)
+
+
+# Walk through all the subfolders of the folder passed to it and pass all files/folders to move function
+###################################################################################################
+def walk_folder(directory, prj_folder):
+
+    project_folders = ['build request',
+                       'design notes & rules',
+                       'design notes and rules',
+                       'mechanicals',
+                       'reports',
+                       'settings',
+                       'source'
+                       ]
+    
+    high_level_folders = ['cam',
+                        'email',
+                        'mfg-data',
+                        'planr testpoints',
+                        'testpoints for todor'
+                        ]
+
+    known_junk = ['project logs for (.*)',
+                '.gitignore',
+                '.git',
+                zip_pcb_number + '.prjpcbstructure',
+                'status report.txt',
+                'history',
+                'design rule check(.*)'
+                ]
+
+    project_files = [zip_pcb_number + '.prjpcb',
+                 zip_pcb_number + '.annotation',
+                 zip_pcb_number + '.PrjPcbVariants',
+                 zip_pcb_number + '.PrjPcbVariants',
+                 zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '....assembly drawing.pdf',
+                 zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '....schematic.pdf',
+                 zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '....assembly bom.pdf',
+                 zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '....pdf'
+                 ]
+
+    # Work through all project outputs folder for project folder level
+    for folder in os.listdir(directory):
+        if folder.lower() in project_folders:
+            # Work through all files in a folder
+            for file in os.listdir(f'{directory}\\{folder}'):
+                # If its junk, record the real name after checking against regular expression
+                skip = [file for junk in known_junk if re.search(junk, file, re.IGNORECASE)]
+                # Move file if it wasnt found to be junk.
+                if file not in skip:
+                    # Move files with function
+                    move_files(file, f'{directory}\\{folder}', prj_folder, f'{prj_folder}\\{zip_pcb_number}_Prototype\\{folder}')
+                else:
+                    remove_file_dir(f'{directory}\\{folder}\\{file}')
+
+            # Delete the folder after it's been emptied
+            try:
+                os.rmdir(f'{directory}\\{folder}')
+            except:
+                False
+                
+        if folder.lower() in high_level_folders:
+            # Work through all files in a folder
+            for file in os.listdir(f'{directory}\\{folder}'):
+                # If its junk, record the real name after checking against regular expression
+                skip = [file for junk in known_junk if re.search(junk, file, re.IGNORECASE)]
+                # Move file if it wasnt found to be junk.
+                if file not in skip:
+                    # Move files with function
+                    move_files(file, f'{directory}\\{folder}', prj_folder, f'{prj_folder}\\{folder}')
+                else:
+                    remove_file_dir(f'{directory}\\{folder}\\{file}')
+
+            # Delete the folder after it's been emptied
+            try:
+                os.rmdir(f'{directory}\\{folder}')
+            except:
+                False
+
+        for file in project_files:
+            if re.search(file, folder, re.IGNORECASE):
+                # Move files with function
+                move_files(folder, directory, prj_folder, f'{prj_folder}\\{zip_pcb_number}_Prototype')
+
+        for junk in known_junk:
+            if re.search(junk, folder, re.IGNORECASE):
+                remove_file_dir(f'{directory}\\{folder}')
+
+# Take any files passed to it and back up if needed before adding/replacing file to project folder
+###################################################################################################
+def move_files(file, source, prj_folder, destination):
+    
+    global zip_pcb_number
+    global files_replaced
+    
+    # Delete and skip files that have not already been copied.
+    if file in files_replaced:
+        if os.path.getmtime(source) < files_replaced[destination + '\\' + file]:
+            # Delete it but dont copy
+            remove_file_dir(source + '\\' + file)
+            return
+        
+    # Making current folder if its not there
+    if not os.path.exists(destination):
+        os.mkdir(destination)
+
+    # If the file in the folders add it to a dictionary of replaced files and move it to a repo
+    if os.path.exists(destination + '\\' + file):
+        # Skip if the date is the same
+        if os.path.getmtime(source + '\\' + file) == os.path.getmtime(destination + '\\' + file):
+            # Delete it but dont copy
+            remove_file_dir(source + '\\' + file)
+            return
+        # If the zip file is older, ask user if they still want to copy it
+        elif os.path.getmtime(source + '\\' + file) < os.path.getmtime(destination + '\\' + file):
+            response_overwrite = ''
+            # Only ask if the file was not already in existance before program started.
+            if destination + '\\' + file not in files_replaced or files_replaced[destination + '\\' + file] != 0:
+                while response_overwrite not in ('y', 'yes', 'n', 'no'):
+                    response_overwrite = input(f'\n{source}\\{file} - Older file found in zip then in project folder. Do you want to use the newer file? ').lower()
+            else:
+                response_overwrite = 'yes'
+            if response_overwrite in ('y', 'yes'):
+                remove_file_dir(source + '\\' + file)
+                return
+
+        # Record the move in files_replaced
+        files_replaced[destination + '\\' + file] = os.path.getmtime(source + '\\' + file)
+        
+        # If its a file/folder and already in deleted, delete it to make room for new
+        remove_file_dir(f'{prj_folder}\\Deleted\\From Unpackage\\{file}')
+        # Move folder/file from project folder to deleted since its being replaced
+        shutil.move(destination + '\\' + file, prj_folder + '\\Deleted\\From Unpackage\\' + file)
+        if os.path.exists(destination + '\\' + file) and os.path.isdir(destination + '\\' + file):
+            shutil.rmtree(destination + '\\' + file)
+        shutil.move(source + '\\' + file, destination + '\\' + file)        
+
+    # If its not in the destination, move it for the first time and record it in files replaced.
+    else:
+        if file not in files_replaced:
+            # Set time to 0 as a marker that nothing was replaced
+            files_replaced[destination + '\\' + file] = 0
+            # Move the folder/file from temp folder to project folder
+            shutil.move(source + '\\' + file, destination + '\\' + file)
+        else:
+            # 'SHOULD' never be seen but putting here in case.
+            print('Error, file in files replaced array but not in destination')
+            print(file)
+
+def unpack_project(zip_path):
+    # Needed variables
+    global zip_pcb_number
+    global files_replaced
+
+    # Extracted folder where files are pulled from then deleted
+    extracted_location = ''
+    # Project selected by user in extracted location that is used to name the file
+    extracted_project = ''
+    # Project folder where the final project lives
+    project_folder = ''
+    # .PrjPCB file selected by user if multiple present
+    selected_project = ''
+    
+    projects_found = []
+
+    # Get the project Directory. Take the Altium project path, rsplit the last \ and take the first string of the 2 new ones
+    project_dir = zip_path.rsplit('\\', 1)[0]
+    # Store the original working directory to restore later
+    owd = os.getcwd()
+    # Change the current working directory to that of the project. Make the \ a \\ to allow python to take the slashes literally.
+    os.chdir(project_dir.replace('\\', '\\\\'))
+
+    # Take the path, check if whats after the last \ starts with a PCB number
+    if re.search('^\d\d\d\dB46\d\d[A-Z]', zip_path.rsplit('\\', 1)[1]):
+        # Grab the first 11 characters of the file
+        zip_pcb_number = zip_path.rsplit('\\', 1)[1][:10]
+    else:
+        # Grab the first 11 characters of the file
+        zip_pcb_number = zip_path.rsplit('\\', 1)[1][:10]
+        # Alert user PCB number could not be found
+        print(f'PCB number not found at start of zip, folders may be name incorrect.\nPCB number used - {zip_pcb_number}')
+
+    # Get date and time of selected zip
+    zip_date = os.path.getmtime(zip_path)
+    # Used to find the newest file
+    temp_time = os.path.getmtime(zip_path)
+    temp_file = zip_path
+    # Get each zip file in the directory that starts with the same PCB Number
+    for file in os.listdir('.\\'):
+        if re.search('^' + zip_pcb_number + '.*\.zip$', file, re.IGNORECASE):
+            # If it is newer, ask if that should be unpackaged instead.
+            if os.path.getmtime(file) > temp_time:
+                temp_file = file
+                temp_time = os.path.getmtime(file)
+
+    if zip_path is not temp_file:
+        response_replace = ''
+        while response_replace not in ('y', 'yes', 'n', 'no'):
+            response_replace = input(f'\n{temp_file} - Newer project zip found. Unpackage this instead? ').lower()
+        # If yes, replace the zip path the user submitted with the new one.
+        if response_replace in ('y', 'yes'):
+            zip_path = os.getcwd() + '\\' + temp_file
+
+    # See if the extracted file already exists
+    if os.path.exists(zip_path.rsplit('.', 1)[0]):
+        folder_inc = 0
+        # If it does count up till you can name the folder with a number
+        while os.path.exists(zip_path.rsplit('.', 1)[0]  + ' (' + str(folder_inc) + ')'):
+            folder_inc += 1
+        extracted_location = zip_path.rsplit('.', 1)[0]  + ' (' + str(folder_inc) + ')'
+            
+    else:
+        # Extracted location will be same name
+        extracted_location = zip_path.rsplit('.', 1)[0]
+
+    # Unzip the project
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(extracted_location)
+        
+    # Make the modified date same as what it was in the zip
+    # https://stackoverflow.com/questions/9813243/extract-files-from-zip-file-and-retain-mod-date
+    for f in zipfile.ZipFile(zip_path, 'r').infolist():
+        # path to this extracted f-item
+        fullpath = os.path.join(extracted_location, f.filename)
+        # still need to adjust the dt o/w item will have the current dt
+        date_time = time.mktime(f.date_time + (0, 0, -1))
+        # update dt
+        os.utime(fullpath, (date_time, date_time))
+
+    # Go through all files in the top directory, if its a project file add it to projects found
+    projects_found = [file for file in os.listdir(extracted_location) if re.search('\.PrjPcb$', file, re.IGNORECASE)]
+    # If no project files found, alert user and exit
+    if projects_found is None:
+        input('\nNo Altium project found in top level of zip, Press enter to exit ')
+        exit()
+    # If more then one project file is found, print them all and alert user
+    elif len(projects_found) > 1:
+        response_project = ''
+        print('\nMultiple project files found!')
+        for project in projects_found:
+            print(project)
+        print()
+        # Go through all project files to see which the user wants to use
+        for project in projects_found:
+            response_project = ''
+            while response_project not in ('y', 'yes', 'n', 'no'):
+                response_project = input(f'\'{project}\' - Is this the project file you would like to use?: ').lower()
+            if response_project in ('y', 'yes'):
+                # Record the full location and file name of the selected project
+                extracted_project = f'{extracted_location}\\{project}'
+                selected_project = project
+                break
+    else:
+        # Record the full location and file name of the only project
+        extracted_project = f'{extracted_location}\\{projects_found[0]}'
+        selected_project = projects_found[0]
+        
+    # Get the folder name from the project file
+    with open(extracted_project, 'r', encoding = 'UTF-8') as project_file:
+        lines = project_file.readlines()
+        for i in range(0, len(lines)):
+            line = lines[i]
+            # If the folder description line is found, verify the next is value and store it
+            if line == 'Name=A104_Project_Info_Folder_Description\n':
+                if lines[i+1].split('=')[0] == 'Value':
+                    project_folder = zip_pcb_number + '_' + lines[i+1].split('=')[1].rstrip()
+        # If the folder description line was not found, use SAP Description
+        if project_folder == '':
+            print('Folder name parameter not found, using SAP description instead.')
+            for i in range(0, len(lines)):
+                line = lines[i]
+                # If the folder description line is found, verify the next is value and store it
+                if line == 'Name=A103_Project_Info_PCB_SAP_Description\n':
+                    if lines[i+1].split('=')[0] == 'Value':
+                        project_folder = zip_pcb_number + '_' + lines[i+1].split('=')[1].rstrip()
+
+    #If the user didnt select a project when multipe were found, alert and exit.
+    if extracted_project == '':
+        input('\nNo Altium project selected, Press enter to exit ')
+        exit()
+
+    # See if the correct folder name is there, if not make it and other needed folders.
+    try:
+        if not os.path.exists(project_folder):
+            os.mkdir(project_folder)
+            os.mkdir(f'{project_folder}\\_Vaulted')
+            os.mkdir(f'{project_folder}\\{zip_pcb_number}_Prototype')
+        if not os.path.exists(f'{project_folder}\\Deleted'):
+            os.mkdir(f'{project_folder}\\Deleted')
+        if not os.path.exists(f'{project_folder}\\Deleted\\From Unpackage'):
+            os.mkdir(f'{project_folder}\\Deleted\\From Unpackage')
+    # Likely error caused by bad character in folder name parameter
+    except OSError as e:
+        print ("Error: %s - %s.\n Possible invalid folder character in parameter" % (e.filename, e.strerror))
+
+# Work through the temp files
+###################################################################################################
+
+    walk_folder(extracted_location, project_folder)
+    walk_folder(f'{extracted_location}\\Project Outputs for {zip_pcb_number}', project_folder)
+
+    # Try to delete project outputs folder if it's empty
+    try:
+        os.rmdir(f'{extracted_location}\\Project Outputs for {zip_pcb_number}')
+    except:
+        False
+    
+# Cleanup and closing
+###################################################################################################
+
+# Try to delete project outputs folder if it's empty
+    try:
+        os.rmdir(f'{extracted_location}\\Project Outputs for {zip_pcb_number}')
+    except:
+        False
+
+    try:
+        os.rmdir(f'{extracted_location}')
+    except:
+        print('Unable to process all files, temporary zip has been kept with unmanaged files')
+        
+    selected_project = os.getcwd() + '\\' + project_folder + '\\' + zip_pcb_number + '_Prototype\\' + selected_project
+    
+    # Change working directory back to default to prevent program from preventing deleting project file
+    os.chdir(owd)
+    
+    # Return the location of the project selected
+    return(selected_project.replace('\\\\', '\\'))
+
+###################################################################################################
+###################################################################################################
+##############     Get the project directory, project number, and all assemblies     ##############
+###################################################################################################
+###################################################################################################
+
+print('Documentation Automator v0.5.0\n')
 # The number of assemblies found
 assembly_count = 0
 # All the assemblies in the project
@@ -26,15 +376,33 @@ project_path = input('Enter the full path of your Altium project:\n')
 if project_path[0] == '"' and project_path[-1] == '"':
     project_path = project_path.strip('"')
 
-# Verify that it is an Altium project file given ie ending in .PrjPcb
-if not re.search('\.PrjPcb$', project_path, re.IGNORECASE):
-    input('\nFile linked to is not an Altium project. Press enter to exit.')
-    exit()
-
 # Verify the file is at the location of the user input
 if not os.path.isfile(project_path):
     input('\nProject not found. Press enter to exit.')
     exit()
+    
+# Verify that it is an Altium project file given ie ending in .PrjPcb
+if not re.search('(\.PrjPcb)?(\.zip)?$', project_path, re.IGNORECASE):
+    input('\nFile linked to is not an Altium project or zip file. Press enter to exit.')
+    exit()
+
+if re.search('\.zip$', project_path, re.IGNORECASE):
+    response_unpackage = ''
+    while response_unpackage not in ('y', 'yes', 'n', 'no'):
+        response_unpackage = input('Zipped project found, woud you like to unpackage? ').lower()
+        if response_unpackage in ('y', 'yes'):
+            project_path = unpack_project(project_path)
+            print('\nProject unpackaging complete!\n')
+        else:
+            input('\nAborted, press enter to exit.')
+            exit()
+    response_continue = ''
+    while response_continue not in ('y', 'yes', 'n', 'no'):
+        response_continue = input('\nWould you like to continue documentation cleanup wtih:\n' + project_path + '? ').lower()
+        if response_continue in ('n', 'no'):
+            input('Aborted, press enter to exit.')
+            exit()
+    
 
 # Get the board number.
 # Take the Altium project path, rsplit the last \ if present and take the second string of the 2 new ones
@@ -502,7 +870,7 @@ for excel in aegis_boms:
             while response2 not in ('y', 'yes', 'n', 'no'):
                 response2 = input(f'Would you like to make text file for {excel}?: ').lower()
     if re.search('^n(o)?$', response2, re.IGNORECASE) and re.search('^n(o)?$', response, re.IGNORECASE):
-        print(sap_bom + ' Skipped\n')
+        print(excel + ' Skipped\n')
         continue
 
     # If the text file already exists, delete it
