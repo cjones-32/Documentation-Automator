@@ -1,3 +1,10 @@
+# Fixes for v1.1.0
+    # Keep super pillar layers
+    # Keep proto docs in unpackage
+    # Add email folder
+    # Dont show layer/fitted in assy bom
+    # Find and remove illegal characers from project folder
+
 # Important to PIP install openpyxl to be able to import it
 import os
 import sys
@@ -70,10 +77,10 @@ def walk_folder(directory, prj_folder):
     project_files = ['^' + zip_pcb_number + '.prjpcb$',
                      '^' + zip_pcb_number + '.annotation$',
                      '^' + zip_pcb_number + '.PrjPcbVariants$',
-                     '^' + zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '....assembly drawing.pdf$',
-                     '^' + zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '....schematic.pdf$',
-                     '^' + zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '....assembly bom.pdf$',
-                     '^' + zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '....pdf$'
+                     '^' + zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '(-PROTO)?....assembly drawing.pdf$',
+                     '^' + zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '(-PROTO)?....schematic.pdf$',
+                     '^' + zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '(-PROTO)?....assembly bom.pdf$',
+                     '^' + zip_pcb_number[0:5] + '5.' + zip_pcb_number[7:9] + '(-PROTO)?....pdf$'
                      ]
 
     # Records if the file is already in the list
@@ -344,7 +351,11 @@ def unpack_project(zip_path):
             # If the folder description line is found, verify the next is value and store it
             if line == 'Name=A104_Project_Info_Folder_Description\n' or line == 'Name=A104_Project_Info_PCB_Folder_Description\n':
                 if lines[i+1].split('=')[0] == 'Value':
-                    project_folder = zip_pcb_number + '_' + lines[i+1].split('=')[1].rstrip()
+                    # Check for illegal file name characers
+                    if re.search(r'[\\/*?:"<>|]',lines[i+1].split('=')[1].rstrip(), re.IGNORECASE):
+                        print('\nIllegal file name character found and removed\n')
+                    # set project folder minus any bad characters.
+                    project_folder = zip_pcb_number + '_' + re.sub(r'[\\/*?:"<>|]',"",lines[i+1].split('=')[1].rstrip())
         # If the folder description line was not found, use SAP Description
         if project_folder == '':
             print('Folder name parameter not found, using SAP description instead.')
@@ -366,6 +377,8 @@ def unpack_project(zip_path):
             os.mkdir(project_folder)
             os.mkdir(f'{project_folder}\\_Vaulted')
             os.mkdir(f'{project_folder}\\{zip_pcb_number}_Prototype')
+            os.mkdir(f'{project_folder}\\Email')
+            os.mkdir(f'{project_folder}\\Email\\Approvals')
         if not os.path.exists(f'{project_folder}\\Deleted'):
             os.mkdir(f'{project_folder}\\Deleted')
         if not os.path.exists(f'{project_folder}\\Deleted\\From Unpackage'):
@@ -452,18 +465,14 @@ def unpack_project(zip_path):
 
 # Clear the screen and print version.
 os.system("cls")
-print('Documentation Automator v1.0.0\n')
+print('Documentation Automator v1.1.0\n')
 # The number of assemblies found
 assembly_count = 0
 # All the assemblies in the project
 assemblies = []
 
 # Get the path of the Altium project from user
-project_path = input('Enter the full path of your Altium project:\n')
-
-# Strip quotes if present from copying path in windows
-if project_path[0] == '"' and project_path[-1] == '"':
-    project_path = project_path.strip('"')
+project_path = input('Enter the full path of your Altium project:\n').strip('" ')
 
 # Verify the file is at the location of the user input
 if not os.path.isfile(project_path):
@@ -586,16 +595,18 @@ gerber_ext = {  pcb_number + '.G[0-9]+' : '   -  Mid Layer ',              # .G(
               pcb_number + '.GBS' : '  -  Bottom Solder Mask',
 #              pcb_number + '.GD[0-9]+' : '   -  Drill Drawing ',        # .GD(int) = Drill Drawing (int)
 #              pcb_number + '.GG[0-9]+' : '   -  Drill Guide ',          # .GG(int) = Drill Guide (int)
-#             pcb_number + '.GKO' : '  -  Keep Out Layer',
+#              pcb_number + '.GKO' : '  -  Keep Out Layer',
 #              pcb_number + '.GM[0-9]+' : '  -  Mechanical Layer ',      # .GM(int) = Mechanical Layer (int)
-               pcb_number + '.GP[0-9]+' : '  -  Internal Plane Layer ', # .GP(int) = Internal Plane Layer (int)
-#             pcb_number + '.GPB' : '  -  Pad Master Bottom',
-#             pcb_number + '.GPT' : '  -  Pad Master Top',
+              pcb_number + '.GM17' : '  -  Super Pillar Top ',
+              pcb_number + '.GM18' : '  -  Super Pillar Bottom ',
+              pcb_number + '.GP[0-9]+' : '  -  Internal Plane Layer ',   # .GP(int) = Internal Plane Layer (int)
+#              pcb_number + '.GPB' : '  -  Pad Master Bottom',
+#              pcb_number + '.GPT' : '  -  Pad Master Top',
               pcb_number + '.GTL' : '  -  Top Layer',
               pcb_number + '.GTO' : '  -  Top Overlay',
               pcb_number + '.GTP' : '  -  Top Paste Mask',
               pcb_number + '.GTS' : '  -  Top Solder Mask',
-#              pcb_number + '.P[0-9]+' : '  -  Gerber Panels ',        # .P0(int) = Ger Panel (int)
+#              pcb_number + '.P[0-9]+' : '  -  Gerber Panels ',          # .P0(int) = Ger Panel (int)
               pcb_number + '.DRR' : '  -  NC Drill Report',
               pcb_number + '.TXT' : '  -  Drill File',
               pcb_number + '-SlotHoles.TXT' : '  -  Slot Drill File',
@@ -846,10 +857,10 @@ for assembly_bom in assembly_boms:
         sheet.cell(row = row, column = 4).value = part['designator']  
         sheet['D' + str(row)].style = default_font
         if pattern_fill == True: sheet['D' + str(row)].fill = PatternFill('solid', fgColor='D9D9D9')
-        sheet.cell(row = row, column = 5).value = part['layer']
-        sheet['E' + str(row)].style = default_font
-        sheet.cell(row = row, column = 6).value = part['fitted']
-        sheet['F' + str(row)].style = default_font
+#        sheet.cell(row = row, column = 5).value = part['layer']
+#        sheet['E' + str(row)].style = default_font
+#        sheet.cell(row = row, column = 6).value = part['fitted']
+#        sheet['F' + str(row)].style = default_font
         row += 1
         # Toggle the fill pattern for every other fill
         pattern_fill = not pattern_fill
