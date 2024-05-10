@@ -5,6 +5,11 @@
     # Dont show layer/fitted in assy bom
     # Find and remove illegal characers from project folder
 
+# Fixes for v1.1.1
+    # Added support for Centroid and Excel Build request BOMS
+    # Adjusted spacing for assy BOM
+    # Aegis sync now finds software
+
 # Important to PIP install openpyxl to be able to import it
 import os
 import sys
@@ -16,7 +21,7 @@ import zipfile
 import time
 from openpyxl.styles import NamedStyle, Font, Border, Side, PatternFill, Alignment
 
-import shutil # DELTE WHEN DELETED FILE REPOSITORY IS NO LONGER NEEDED
+version = '1.1.1'
 
 ###################################################################################################
 ###################################################################################################
@@ -465,7 +470,7 @@ def unpack_project(zip_path):
 
 # Clear the screen and print version.
 os.system("cls")
-print('Documentation Automator v1.1.0\n')
+print('Documentation Automator v' + version + '\n')
 # The number of assemblies found
 assembly_count = 0
 # All the assemblies in the project
@@ -563,7 +568,8 @@ aegis_boms = []
 # List of files for the reports folder that we want to keep
 reports_keep = ['^' + pcb_number + '[ ,_]Order[ ,_]Information.xls(x)?$',
                 '^' + pcb_number + '[ ,_]Build[ ,_]Request.doc(x)?$',
-                '^' + pcb_number + '[ ,_]EE[ ,_]Review.xls(x)?$'
+                '^' + pcb_number + '[ ,_]EE[ ,_]Review.xls(x)?$',
+                '^' + pcb_number + ' Build Request.xlsx$'
                 ]
 
 # List of files for Source folder we want to keep
@@ -679,7 +685,7 @@ print()
 ###################################################################################################
 
 print('Aegis Sync Excel BOMs:')
-# For each assembly, see if the its BOM is in the reports folder
+# For each assembly, see if the its BOM is in the Mfg-Data folder
 for assembly in assemblies:
     excel = ''
     text = ''
@@ -714,12 +720,30 @@ for assembly in assemblies:
         mfgdata_keep.append(text)
     else:
         print(assembly + ' MISSING')
+print()
+
+# Find the Centroid BOMs
+###################################################################################################
+
+print('Centroid BOMs:')
+# For each assembly, see if the its BOM is in the Mfg-Data folder
+for assembly in assemblies:
+    found = False
+    print(assembly, end = '')
+    for file in os.listdir('..\\Mfg-Data\\'):
+        if re.search('Centroid_' + assembly + '.csv', file, re.IGNORECASE):
+            found = True
+            mfgdata_keep.append(file)
+            print(' Centroid BOM Found')
+    if found == False:
+        print(' MISSING')
+print()
 
 ###################################################################################################
 #################################     Sort the assembly BOMs     ##################################
 ###################################################################################################
 
-print('\n\nSorting Assembly BOMs')
+print('\nSorting Assembly BOMs')
 print('*********************')
 
 # Ask the user if they would like to sort all assembly BOM
@@ -764,7 +788,11 @@ for assembly_bom in assembly_boms:
     # A list that will contain dictionaries of the parts
     bom_content = []
     # Tells how far the BOM needs to be moved up to overwrite the template headers
-    bom_offset = 14
+    bom_offset = 16
+    # How many blank rows print between sections, ie top fitted, top not fitted, etc
+    section_spacing = 3
+    # Additional blank rows between top side and bottom side
+    top_bot_buffer = 1
 
 # Read the cells
 ###################################################################
@@ -818,12 +846,14 @@ for assembly_bom in assembly_boms:
 
     current_section = 'None'
     pattern_fill = False
-    # Start printing 14 rows up from where the header row was found
+    # Start printing x rows up from where the header row was found
     row = header_row - bom_offset
     for part in bom_content:
         # Check if you are in a new section of the BOM, if so print the header
         if current_section != part['layer'] + part['fitted']:
-            row += 2
+            row += section_spacing
+            if not current_section.startswith(part['layer']):
+                row += top_bot_buffer
             current_section = part['layer'] + part['fitted']
             # Determine what section of BOM is starting
             if part['layer'] == 'Top': header_string = 'TOP SIDE COMPONENTS'
@@ -997,15 +1027,27 @@ for excel in aegis_boms:
             os.remove('..\\Mfg-Data\\' + excel.rsplit('.', 1)[0] + '.txt')
         except OSError as e: 
             print ("Error: %s - %s." % (e.filename, e.strerror))
-            
     # Open the excel file and go in the first sheet
     print('Generating text file for ' + excel)
     wb = openpyxl.load_workbook('..\\Mfg-Data\\' + excel)
     sheet = wb['Sheet1']
+    
     # Save each row to text file, tab delimited
     with open('..\\Mfg-Data\\' + excel.rsplit('.', 1)[0] + '.txt', 'w', newline = '') as aegis_text:
         file = csv.writer(aegis_text, delimiter = '\t')
         for row in sheet.rows:
+            part_number = row[1].value
+            # If there is a software version found, prompt for version
+            if re.search('^\d\d\d\dS\d\d\d\d-(X|S)$', row[1].value, re.IGNORECASE):
+                print('Software found')
+                # Get the version from user and confirm
+                while 1:
+                    version = input('Undefined software version found: \'' + part_number.split('-', 1)[0] + '-X\', what version should it be? \n')
+                    part_number = part_number.split('-', 1)[0] + '-' + version
+                    verify = input(part_number + ' - Is this correct?')
+                    if re.search('^y(es)?$', verify, re.IGNORECASE):
+                        row[1].value = part_number
+                        break
             file.writerow([cell.value for cell in row])
 
     # Finished with conversion, no need to save excel
