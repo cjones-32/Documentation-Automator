@@ -1,14 +1,23 @@
+# Fixes for v1.1.3
+    # Added support for Logix BOMs
+    # Added support for outdated build requests with underscores
+    # Added support for \\mid_file1 links
+
+# Fixes for v1.1.2
+    # Added text wrap to assy BOM cells
+    # Adjusted offset new assy BOM template
+
+# Fixes for v1.1.1
+    # Added support for Centroid and Excel Build request BOMS
+    # Adjusted spacing for assy BOM
+    # Aegis sync now finds software
+    
 # Fixes for v1.1.0
     # Keep super pillar layers
     # Keep proto docs in unpackage
     # Add email folder
     # Dont show layer/fitted in assy bom
     # Find and remove illegal characers from project folder
-
-# Fixes for v1.1.1
-    # Added support for Centroid and Excel Build request BOMS
-    # Adjusted spacing for assy BOM
-    # Aegis sync now finds software
 
 # Important to PIP install openpyxl to be able to import it
 import os
@@ -21,7 +30,7 @@ import zipfile
 import time
 from openpyxl.styles import NamedStyle, Font, Border, Side, PatternFill, Alignment
 
-version = '1.1.1'
+version = '1.1.3'
 
 ###################################################################################################
 ###################################################################################################
@@ -263,7 +272,7 @@ def unpack_project(zip_path):
     os.chdir(project_dir.replace('\\', '\\\\'))
 
     # Take the path, check if whats after the last \ starts with a PCB number
-    if re.search('^\d\d\d\dB46\d\d[A-Z]', zip_path.rsplit('\\', 1)[1]):
+    if re.search(r'^\d\d\d\dB46\d\d[A-Z]', zip_path.rsplit('\\', 1)[1]):
         # Grab the first 11 characters of the file
         zip_pcb_number = zip_path.rsplit('\\', 1)[1][:10]
     else:
@@ -279,7 +288,7 @@ def unpack_project(zip_path):
     temp_file = zip_path
     # Get each zip file in the directory that starts with the same PCB Number
     for file in os.listdir('.\\'):
-        if re.search('^' + zip_pcb_number + '.*\.zip$', file, re.IGNORECASE):
+        if re.search('^' + zip_pcb_number + r'.*\.zip$', file, re.IGNORECASE):
             # If it is newer, ask if that should be unpackaged instead.
             if os.path.getmtime(file) > temp_time:
                 temp_file = file
@@ -320,7 +329,7 @@ def unpack_project(zip_path):
         os.utime(fullpath, (date_time, date_time))
 
     # Go through all files in the top directory, if its a project file add it to projects found
-    projects_found = [file for file in os.listdir(extracted_location) if re.search('\.PrjPcb$', file, re.IGNORECASE)]
+    projects_found = [file for file in os.listdir(extracted_location) if re.search(r'\.PrjPcb$', file, re.IGNORECASE)]
     # If no project files found, alert user and exit
     if projects_found is None:
         input('\nNo Altium project found in top level of zip, Press enter to exit ')
@@ -477,7 +486,11 @@ assembly_count = 0
 assemblies = []
 
 # Get the path of the Altium project from user
-project_path = input('Enter the full path of your Altium project:\n').strip('" ')
+# First strip common extra characters
+# Then replace all forward slashes with backslashes (only nessicary when running directly in python for some reason
+# Last replace the mid-file link with the T: drive location
+
+project_path = input('Enter the full path of your Altium project:\n').strip('"\' \t').replace('/','\\').replace('\\\\mid-file1\\shares', 'T:')
 
 # Verify the file is at the location of the user input
 if not os.path.isfile(project_path):
@@ -485,11 +498,11 @@ if not os.path.isfile(project_path):
     exit()
     
 # Verify that it is an Altium project file given ie ending in .PrjPcb
-if not re.search('(\.PrjPcb)?(\.zip)?$', project_path, re.IGNORECASE):
+if not re.search(r'(\.PrjPcb)?(\.zip)?$', project_path, re.IGNORECASE):
     input('\nFile linked to is not an Altium project or zip file. Press enter to exit.')
     exit()
 
-if re.search('\.zip$', project_path, re.IGNORECASE):
+if re.search(r'\.zip$', project_path, re.IGNORECASE):
     response_unpackage = ''
     while response_unpackage not in ('y', 'yes', 'n', 'no'):
         response_unpackage = input('Zipped project found, would you like to unpackage? ').lower()
@@ -520,7 +533,7 @@ else:
     pcb_number = pcb_number.rsplit('.', 1)[0]
  
 # Verifies that the board number matches the template of 1234B4657A
-if not re.search('^\d\d\d\dB46\d\d[A-Z]$', pcb_number):
+if not re.search(r'^\d\d\d\dB46\d\d[A-Z]$', pcb_number):
     input('\nError: Invalid project number, project number found: \'' + pcb_number + '\'. Press enter to exit.')
     exit()
     
@@ -569,7 +582,7 @@ aegis_boms = []
 reports_keep = ['^' + pcb_number + '[ ,_]Order[ ,_]Information.xls(x)?$',
                 '^' + pcb_number + '[ ,_]Build[ ,_]Request.doc(x)?$',
                 '^' + pcb_number + '[ ,_]EE[ ,_]Review.xls(x)?$',
-                '^' + pcb_number + ' Build Request.xlsx$'
+                '^' + pcb_number + '[ ,_]Build[ ,_]Request.xlsx$'
                 ]
 
 # List of files for Source folder we want to keep
@@ -739,6 +752,23 @@ for assembly in assemblies:
         print(' MISSING')
 print()
 
+# Find the Logix BOMs
+###################################################################################################
+
+print('Logix BOMs:')
+# For each assembly, see if the its BOM is in the Mfg-Data folder
+for assembly in assemblies:
+    found = False
+    print(assembly, end = '')
+    for file in os.listdir('..\\Mfg-Data\\'):
+        if re.search('Logix_BOM_' + assembly + '.xlsx', file, re.IGNORECASE):
+            found = True
+            mfgdata_keep.append(file)
+            print(' Logix BOM Found')
+    if found == False:
+        print(' MISSING')
+print()
+
 ###################################################################################################
 #################################     Sort the assembly BOMs     ##################################
 ###################################################################################################
@@ -782,13 +812,13 @@ for assembly_bom in assembly_boms:
     # Font for default lines
     default_font  = NamedStyle(name = 'default_font')
     default_font.font = Font(name = 'Verdana', size = 12)
-    default_font.alignment = Alignment(horizontal = 'left', vertical = 'top')
+    default_font.alignment = Alignment(horizontal = 'left', vertical = 'top', wrap_text=True)
     # Something to tell when the BOM starts
     header_row = 0
     # A list that will contain dictionaries of the parts
     bom_content = []
     # Tells how far the BOM needs to be moved up to overwrite the template headers
-    bom_offset = 16
+    bom_offset = 14
     # How many blank rows print between sections, ie top fitted, top not fitted, etc
     section_spacing = 3
     # Additional blank rows between top side and bottom side
@@ -956,7 +986,7 @@ for sap_bom in sap_boms:
             proto_found = True
             continue
         # If there is a software version found, prompt for version
-        if re.search('^\d\d\d\dS\d\d\d\d-(X|S)$', part_number, re.IGNORECASE):
+        if re.search(r'^\d\d\d\dS\d\d\d\d-(X|S)$', part_number, re.IGNORECASE):
             print('Software found')
             # Get the version from user and confirm
             while 1:
@@ -1038,7 +1068,7 @@ for excel in aegis_boms:
         for row in sheet.rows:
             part_number = row[1].value
             # If there is a software version found, prompt for version
-            if re.search('^\d\d\d\dS\d\d\d\d-(X|S)$', row[1].value, re.IGNORECASE):
+            if re.search(r'^\d\d\d\dS\d\d\d\d-(X|S)$', row[1].value, re.IGNORECASE):
                 print('Software found')
                 # Get the version from user and confirm
                 while 1:
